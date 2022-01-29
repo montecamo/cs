@@ -43,20 +43,12 @@ char** parse_input(char* input, char* delim) {
 
     tokens = realloc(tokens, i * sizeof(char*) + sizeof(NULL));
 
-    token[strcspn(token, "\n")] = '\0';
-
     tokens[i - 1] = strdup(trim_right(trim_left(token)));
   }
 
   tokens[i] = NULL;
 
   return tokens;
-}
-
-void printt(char** arr) {
-  for (int i = 0; arr[i] != NULL; i++) {
-    printf("elem: |%s|\n", arr[i]);
-  }
 }
 
 char* find_program(char* program) {
@@ -77,8 +69,6 @@ char* find_program(char* program) {
 
   panic();
   exit(1);
-
-  return "";
 }
 
 int handle_command(char* input, int* fd) {
@@ -181,6 +171,7 @@ int main(int argc, char** argv) {
   }
   if (argc > 1) {
     close(0);
+
     if (open(argv[1], O_RDONLY) < 0) {
       panic();
       exit(1);
@@ -189,8 +180,8 @@ int main(int argc, char** argv) {
 
   char *line = NULL;
 
-  size_t linecap = 0;
   ssize_t linelen;
+  size_t linecap = 0;
 
   if (argc == 1) {
     printf("wish> ");
