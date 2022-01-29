@@ -1,0 +1,156 @@
+diff --git a/Makefile b/Makefile
+index 09d790c..f1c93f3 100644
+--- a/Makefile
++++ b/Makefile
+@@ -29,10 +29,10 @@ OBJS = \
+ 	vm.o\
+ 
+ # Cross-compiling (e.g., on Mac OS X)
+-# TOOLPREFIX = i386-jos-elf
++TOOLPREFIX = i386-elf-
+ 
+ # Using native tools (e.g., on X86 Linux)
+-#TOOLPREFIX = 
++#TOOLPREFIX =
+ 
+ # Try to infer the correct TOOLPREFIX if not set
+ ifndef TOOLPREFIX
+@@ -76,7 +76,7 @@ AS = $(TOOLPREFIX)gas
+ LD = $(TOOLPREFIX)ld
+ OBJCOPY = $(TOOLPREFIX)objcopy
+ OBJDUMP = $(TOOLPREFIX)objdump
+-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer
++CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer -Wno-stringop-overflow
+ CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
+ ASFLAGS = -m32 -gdwarf-2 -Wa,-divide
+ # FreeBSD ld wants ``elf_i386_fbsd''
+@@ -187,7 +187,7 @@ fs.img: mkfs README $(UPROGS)
+ 
+ -include *.d
+ 
+-clean: 
++clean:
+ 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
+ 	*.o *.d *.asm *.sym vectors.S bootblock entryother \
+ 	initcode initcode.out kernel xv6.img fs.img kernelmemfs \
+@@ -217,7 +217,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
+ 	then echo "-gdb tcp::$(GDBPORT)"; \
+ 	else echo "-s -p $(GDBPORT)"; fi)
+ ifndef CPUS
+-CPUS := 2
++CPUS := 1
+ endif
+ QEMUOPTS = -drive file=fs.img,index=1,media=disk,format=raw -drive file=xv6.img,index=0,media=disk,format=raw -smp $(CPUS) -m 512 $(QEMUEXTRA)
+ 
+diff --git a/syscall.c b/syscall.c
+index ee85261..f9ea7f3 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -60,7 +60,7 @@ argptr(int n, char **pp, int size)
+ {
+   int i;
+   struct proc *curproc = myproc();
+- 
++
+   if(argint(n, &i) < 0)
+     return -1;
+   if(size < 0 || (uint)i >= curproc->sz || (uint)i+size > curproc->sz)
+@@ -103,6 +103,7 @@ extern int sys_unlink(void);
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
++extern int sys_getreadcount(void);
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -126,6 +127,7 @@ static int (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_getreadcount] sys_getreadcount,
+ };
+ 
+ void
+diff --git a/syscall.h b/syscall.h
+index bc5f356..a12d885 100644
+--- a/syscall.h
++++ b/syscall.h
+@@ -20,3 +20,4 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_getreadcount  22
+diff --git a/sysfile.c b/sysfile.c
+index bfe61b7..79ad2f2 100644
+--- a/sysfile.c
++++ b/sysfile.c
+@@ -66,6 +66,9 @@ sys_dup(void)
+   return fd;
+ }
+ 
++struct spinlock lock;
++
++int readcount = 0;
+ int
+ sys_read(void)
+ {
+@@ -73,11 +76,25 @@ sys_read(void)
+   int n;
+   char *p;
+ 
+-  if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argptr(1, &p, n) < 0)
++  acquire(&lock);
++  readcount++;
++  release(&lock);
++
++  if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argptr(1, &p, n) < 0) {
+     return -1;
++  }
++
+   return fileread(f, p, n);
+ }
+ 
++int
++sys_getreadcount(void)
++{
++  initlock(&lock, "readcount");
++
++  return readcount;
++}
++
+ int
+ sys_write(void)
+ {
+@@ -374,7 +391,7 @@ sys_chdir(void)
+   char *path;
+   struct inode *ip;
+   struct proc *curproc = myproc();
+-  
++
+   begin_op();
+   if(argstr(0, &path) < 0 || (ip = namei(path)) == 0){
+     end_op();
+diff --git a/user.h b/user.h
+index 4f99c52..07b6a65 100644
+--- a/user.h
++++ b/user.h
+@@ -20,6 +20,7 @@ int mkdir(const char*);
+ int chdir(const char*);
+ int dup(int);
+ int getpid(void);
++int getreadcount(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
+diff --git a/usys.S b/usys.S
+index 8bfd8a1..8eb915e 100644
+--- a/usys.S
++++ b/usys.S
+@@ -26,6 +26,7 @@ SYSCALL(mkdir)
+ SYSCALL(chdir)
+ SYSCALL(dup)
+ SYSCALL(getpid)
++SYSCALL(getreadcount)
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
