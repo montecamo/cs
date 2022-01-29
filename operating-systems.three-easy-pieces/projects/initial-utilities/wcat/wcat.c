@@ -1,23 +1,25 @@
-#include <stdio.h>
-#include <stdlib.h>
-
-#define BUFFER_SIZE (512)
+#include "stdio.h"
 
 int main(int argc, char *argv[]) {
+  char buff[50];
+
+  if (argc < 2) {
+    return 0;
+  }
+
   for (int i = 1; i < argc; i++) {
-    FILE *fp = fopen(argv[i], "r");
+    FILE *ptr = fopen(argv[i], "r");
 
-    if (fp == NULL) {
+    if (ptr == NULL) {
       printf("wcat: cannot open file\n");
-      exit(1);
-    }
-  
-    char buffer[BUFFER_SIZE];
-    while (fgets(buffer, BUFFER_SIZE, fp) != NULL) {
-      printf("%s", buffer);
+      return 1;
     }
 
-    fclose(fp); 
+    while (fgets(buff, 50, ptr) != NULL) {
+      printf("%s", buff);
+    }
+
+    fclose(ptr);
   }
 
   return 0;

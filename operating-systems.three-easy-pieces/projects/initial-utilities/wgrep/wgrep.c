@@ -1,26 +1,11 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "stdio.h"
+#include "string.h"
 
-#define BUFFER_SIZE (512)
 
-void print_grep(FILE *fp, char *needle) {
-  char *haystack = NULL;
-  size_t linecap = 0;
-  ssize_t linelen;
-
-  while ((linelen = getline(&haystack, &linecap, fp)) > 0) {
-    char *result = strstr(haystack, needle);
-    if (result) {
-      printf("%s", haystack);
-    }
-  }
-}
-
-int main(int argc, char *argv[]) {
+int main(int argc, char **argv) {
   if (argc == 1) {
     printf("wgrep: searchterm [file ...]\n");
-    exit(1);
+    return 1;
   }
 
   char *needle = argv[1];
@@ -30,16 +15,30 @@ int main(int argc, char *argv[]) {
 
     if (fp == NULL) {
       printf("wgrep: cannot open file\n");
-      exit(1);
+      return 1;
     }
 
-    print_grep(fp, needle);
+    char *line = NULL;
+    size_t linecap = 0;
 
-    fclose(fp); 
+    while (getline(&line, &linecap, fp) > 0) {
+      if (strstr(line, needle) != NULL) {
+        printf("%s", line);
+      }
+    }
+
+    fclose(fp);
   }
 
   if (argc == 2) {
-    print_grep(stdin, needle);
+    char *line = NULL;
+    size_t linecap = 0;
+
+    while (getline(&line, &linecap, stdin) > 0) {
+      if (strstr(line, needle) != NULL) {
+        printf("%s", line);
+      }
+    }
   }
 
   return 0;
