@@ -1,0 +1,12 @@
+expr → expr ( "(" ( expr ( "," expr )* )? ")" | "." IDENTIFIER )+
+     | IDENTIFIER
+     | NUMBER
+
+
+expr -> expr braces 
+expr -> IDENTIFIER
+expr -> NUMBER
+
+braces -> ( "(" ( expr ( "," expr )* )? ")" | "." IDENTIFIER )
+braces -> ( "(" ( expr ( "," expr )* )? ")" | "." IDENTIFIER ) braces
+
