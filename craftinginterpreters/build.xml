@@ -1,0 +1,7 @@
+<project default="compile">
+    <target name="compile">
+        <mkdir dir="bin"/>
+        <javac srcdir="tool" destdir="bin"/>
+        <javac srcdir="lox" destdir="bin"/>
+    </target>
+</project>
