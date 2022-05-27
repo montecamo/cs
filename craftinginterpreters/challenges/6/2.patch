@@ -1,0 +1,141 @@
+diff --git a/lox/AstPrinter.java b/lox/AstPrinter.java
+index 19e3849..87c1c2f 100644
+--- a/lox/AstPrinter.java
++++ b/lox/AstPrinter.java
+@@ -27,6 +27,11 @@ class AstPrinter implements Expr.Visitor<String> {
+     return parenthesize(expr.operator.lexeme, expr.right);
+   }
+ 
++  @Override
++  public String visitConditionalExpr(Expr.Conditional expr) {
++    return parenthesize(parenthesize("condition", expr.condition), expr.positive, expr.negative);
++  }
++
+   private String parenthesize(String name, Expr... exprs) {
+     StringBuilder builder = new StringBuilder();
+ 
+@@ -52,3 +57,5 @@ class AstPrinter implements Expr.Visitor<String> {
+     System.out.println(new AstPrinter().print(expression));
+   }
+ }
++
++// true ? (1 ? 2 : 3) : (lol ? kek : cheburek)
+diff --git a/lox/Expr.java b/lox/Expr.java
+index 54183de..e3e099d 100644
+--- a/lox/Expr.java
++++ b/lox/Expr.java
+@@ -8,6 +8,7 @@ abstract class Expr {
+     R visitGroupingExpr(Grouping expr);
+     R visitLiteralExpr(Literal expr);
+     R visitUnaryExpr(Unary expr);
++    R visitConditionalExpr(Conditional expr);
+   }
+   static class Binary extends Expr {
+     Binary(Expr left, Token operator, Expr right) {
+@@ -63,6 +64,22 @@ abstract class Expr {
+     final Token operator;
+     final Expr right;
+   }
++  static class Conditional extends Expr {
++    Conditional(Expr condition, Expr positive, Expr negative) {
++      this.condition = condition;
++      this.positive = positive;
++      this.negative = negative;
++    }
++
++    @Override
++    <R> R accept(Visitor<R> visitor) {
++      return visitor.visitConditionalExpr(this);
++    }
++
++    final Expr condition;
++    final Expr positive;
++    final Expr negative;
++  }
+ 
+   abstract <R> R accept(Visitor<R> visitor);
+ }
+diff --git a/lox/Parser.java b/lox/Parser.java
+index bd45be7..44960cd 100644
+--- a/lox/Parser.java
++++ b/lox/Parser.java
+@@ -23,7 +23,25 @@ class Parser {
+   }
+ 
+   private Expr expression() {
+-    return equality();
++    return ternary();
++  }
++
++  private Expr ternary() {
++    Expr expr = equality();
++
++    if (match(QUESTION)) {
++      Token operator = previous();
++
++      Expr positive = equality();
++
++      consume(COLON, "Expect ':' after ? operator.");
++
++      Expr negative = ternary();
++      
++      expr = new Expr.Conditional(expr, positive, negative);
++    }
++
++    return expr;
+   }
+ 
+   private Expr equality() {
+@@ -32,6 +50,7 @@ class Parser {
+     while (match(BANG_EQUAL, EQUAL_EQUAL)) {
+       Token operator = previous();
+       Expr right = comparison();
++
+       expr = new Expr.Binary(expr, operator, right);
+     }
+ 
+diff --git a/lox/Scanner.java b/lox/Scanner.java
+index e197380..0d9530e 100644
+--- a/lox/Scanner.java
++++ b/lox/Scanner.java
+@@ -64,6 +64,8 @@ class Scanner {
+       case '-': addToken(MINUS); break;
+       case '+': addToken(PLUS); break;
+       case ';': addToken(SEMICOLON); break;
++      case ':': addToken(COLON); break;
++      case '?': addToken(QUESTION); break;
+       case '*': addToken(STAR); break; 
+       case '!':
+         addToken(match('=') ? BANG_EQUAL : BANG);
+diff --git a/lox/TokenType.java b/lox/TokenType.java
+index c5967be..0666bce 100644
+--- a/lox/TokenType.java
++++ b/lox/TokenType.java
+@@ -4,6 +4,7 @@ enum TokenType {
+   // Single-character tokens.
+   LEFT_PAREN, RIGHT_PAREN, LEFT_BRACE, RIGHT_BRACE,
+   COMMA, DOT, MINUS, PLUS, SEMICOLON, SLASH, STAR,
++  QUESTION, COLON,
+ 
+   // One or two character tokens.
+   BANG, BANG_EQUAL,
+diff --git a/tool/GenerateAst.java b/tool/GenerateAst.java
+index 4e5d7bd..c466751 100644
+--- a/tool/GenerateAst.java
++++ b/tool/GenerateAst.java
+@@ -14,10 +14,11 @@ public class GenerateAst {
+     String outputDir = args[0];
+ 
+     defineAst(outputDir, "Expr", Arrays.asList(
+-      "Binary   : Expr left, Token operator, Expr right",
+-      "Grouping : Expr expression",
+-      "Literal  : Object value",
+-      "Unary    : Token operator, Expr right"
++      "Binary      : Expr left, Token operator, Expr right",
++      "Grouping    : Expr expression",
++      "Literal     : Object value",
++      "Unary       : Token operator, Expr right",
++      "Conditional : Expr condition, Expr positive, Expr negative"
+     ));
+   }
+ 
