@@ -1,0 +1,109 @@
+diff --git a/lox/AstPrinter.java b/lox/AstPrinter.java
+index 19e3849..a82e9a3 100644
+--- a/lox/AstPrinter.java
++++ b/lox/AstPrinter.java
+@@ -27,6 +27,11 @@ class AstPrinter implements Expr.Visitor<String> {
+     return parenthesize(expr.operator.lexeme, expr.right);
+   }
+ 
++  @Override
++  public String visitEmptyExpr(Expr.Empty expr) {
++    return "Empty";
++  }
++
+   private String parenthesize(String name, Expr... exprs) {
+     StringBuilder builder = new StringBuilder();
+ 
+diff --git a/lox/Expr.java b/lox/Expr.java
+index 54183de..13fb5c0 100644
+--- a/lox/Expr.java
++++ b/lox/Expr.java
+@@ -8,6 +8,7 @@ abstract class Expr {
+     R visitGroupingExpr(Grouping expr);
+     R visitLiteralExpr(Literal expr);
+     R visitUnaryExpr(Unary expr);
++    R visitEmptyExpr(Empty expr);
+   }
+   static class Binary extends Expr {
+     Binary(Expr left, Token operator, Expr right) {
+@@ -63,6 +64,15 @@ abstract class Expr {
+     final Token operator;
+     final Expr right;
+   }
++  static class Empty extends Expr {
++    Empty() {
++    }
++
++    @Override
++    <R> R accept(Visitor<R> visitor) {
++      return visitor.visitEmptyExpr(this);
++    }
++  }
+ 
+   abstract <R> R accept(Visitor<R> visitor);
+ }
+diff --git a/lox/Lox.java b/lox/Lox.java
+index 531fc19..bd19524 100644
+--- a/lox/Lox.java
++++ b/lox/Lox.java
+@@ -54,7 +54,8 @@ class Lox {
+     // Stop if there was a syntax error.
+     if (hadError) return;
+ 
+-    System.out.println(new AstPrinter().print(expression));}
++    System.out.println(new AstPrinter().print(expression));
++  }
+ 
+   static void error(int line, String message) {
+     report(line, "", message);
+diff --git a/lox/Parser.java b/lox/Parser.java
+index bd45be7..b243023 100644
+--- a/lox/Parser.java
++++ b/lox/Parser.java
+@@ -29,10 +29,21 @@ class Parser {
+   private Expr equality() {
+     Expr expr = comparison();
+ 
++    boolean error = expr instanceof Expr.Empty;
++
++    if (error) {
++      error(peek(), "You need to specify left hand of equality expression");
++    }
++
+     while (match(BANG_EQUAL, EQUAL_EQUAL)) {
+       Token operator = previous();
+       Expr right = comparison();
+-      expr = new Expr.Binary(expr, operator, right);
++
++      if (error) {
++        expr = new Expr.Empty();
++      } else {
++        expr = new Expr.Binary(expr, operator, right);
++      }
+     }
+ 
+     return expr;
+@@ -99,7 +110,8 @@ class Parser {
+       return new Expr.Grouping(expr);
+     }
+ 
+-    throw error(peek(), "Expect expression.");
++    return new Expr.Empty();
++    // throw error(peek(), "Expect expression.");
+   }
+ 
+   private boolean match(TokenType... types) {
+diff --git a/tool/GenerateAst.java b/tool/GenerateAst.java
+index 4e5d7bd..04240e0 100644
+--- a/tool/GenerateAst.java
++++ b/tool/GenerateAst.java
+@@ -17,7 +17,8 @@ public class GenerateAst {
+       "Binary   : Expr left, Token operator, Expr right",
+       "Grouping : Expr expression",
+       "Literal  : Object value",
+-      "Unary    : Token operator, Expr right"
++      "Unary    : Token operator, Expr right",
++      "Empty    : null value"
+     ));
+   }
+ 
