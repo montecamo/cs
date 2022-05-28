@@ -1,0 +1,26 @@
+diff --git a/lox/Interpreter.java b/lox/Interpreter.java
+index a860c01..074cc0f 100644
+--- a/lox/Interpreter.java
++++ b/lox/Interpreter.java
+@@ -51,12 +51,18 @@ class Interpreter implements Expr.Visitor<Object> {
+           return (String)left + (String)right;
+         }
+ 
++        if (left instanceof String && right instanceof Double) {
++          return (String)left + ((Double)right).toString();
++        }
++
++        if (left instanceof Double && right instanceof String) {
++          return ((Double)left).toString() + (String)right;
++        }
++
+         throw new RuntimeError(
+             expr.operator,
+-            "Operands must be two numbers or two strings."
++            "Operands must be combination of numbers and strings."
+         );
+-
+-        break;
+       case GREATER:
+         checkNumberOperands(expr.operator, left, right);
+         return (double)left > (double)right;
