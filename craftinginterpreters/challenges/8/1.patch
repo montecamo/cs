@@ -1,0 +1,57 @@
+diff --git a/lox/Interpreter.java b/lox/Interpreter.java
+index 8654a2b..88c4a26 100644
+--- a/lox/Interpreter.java
++++ b/lox/Interpreter.java
+@@ -4,6 +4,15 @@ import java.util.List;
+ 
+ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
+   private Environment environment = new Environment();
++  final Boolean isRepl;
++
++  Interpreter() {
++    isRepl = false;
++  }
++
++  Interpreter(Boolean isRepl) {
++    this.isRepl = isRepl;
++  }
+ 
+   @Override
+   public Object visitLiteralExpr(Expr.Literal expr) {
+@@ -82,7 +91,12 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
+ 
+   @Override
+   public Void visitExpressionStmt(Stmt.Expression stmt) {
+-    evaluate(stmt.expression);
++    Object result = evaluate(stmt.expression);
++
++    if (isRepl) {
++      System.out.println(stringify(result));
++    }
++
+     return null;
+   }
+ 
+diff --git a/lox/Lox.java b/lox/Lox.java
+index cacf303..eb8bcf7 100644
+--- a/lox/Lox.java
++++ b/lox/Lox.java
+@@ -12,15 +12,17 @@ class Lox {
+   static boolean hadError = false;
+   static boolean hadRuntimeError = false;
+ 
+-  private static final Interpreter interpreter = new Interpreter();
++  private static Interpreter interpreter;;
+ 
+   public static void main(String[] args) throws IOException {
+     if (args.length > 1) {
+       System.out.println("Usage: jlox [script]");
+       System.exit(64); 
+     } else if (args.length == 1) {
++      interpreter = new Interpreter();
+       runFile(args[0]);
+     } else {
++      interpreter = new Interpreter(true);
+       runPrompt();
+     }
+   }
