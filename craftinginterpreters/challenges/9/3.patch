@@ -1,0 +1,171 @@
+diff --git a/lox/BreakError.java b/lox/BreakError.java
+new file mode 100644
+index 0000000..366208a
+--- /dev/null
++++ b/lox/BreakError.java
+@@ -0,0 +1,3 @@
++package com.craftinginterpreters.lox;
++
++class BreakError extends RuntimeException {}
+diff --git a/lox/Interpreter.java b/lox/Interpreter.java
+index 507b2cb..ce77ce6 100644
+--- a/lox/Interpreter.java
++++ b/lox/Interpreter.java
+@@ -142,11 +142,21 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
+   @Override
+   public Void visitWhileStmt(Stmt.While stmt) {
+     while (isTruthy(evaluate(stmt.condition))) {
+-      execute(stmt.body);
++      try {
++        execute(stmt.body);
++      } catch (BreakError error) {
++        break;     
++      }
+     }
++
+     return null;
+   }
+ 
++  @Override
++  public Void visitBreakStmt(Stmt.Break stmt) {
++    throw new BreakError();
++  }
++
+   private Object evaluate(Expr expr) {
+     return expr.accept(this);
+   }
+diff --git a/lox/Parser.java b/lox/Parser.java
+index bbcfb82..040fc5d 100644
+--- a/lox/Parser.java
++++ b/lox/Parser.java
+@@ -11,6 +11,7 @@ class Parser {
+ 
+   private final List<Token> tokens;
+   private int current = 0;
++  private Boolean isEvaluateLoop = false;
+ 
+   Parser(List<Token> tokens) {
+     this.tokens = tokens;
+@@ -18,6 +19,7 @@ class Parser {
+ 
+   List<Stmt> parse() {
+     List<Stmt> statements = new ArrayList<>();
++
+     while (!isAtEnd()) {
+       statements.add(declaration());
+     }
+@@ -43,6 +45,15 @@ class Parser {
+     if (match(WHILE)) return whileStatement();
+     if (match(LEFT_BRACE)) return new Stmt.Block(block());
+ 
++    if (match(BREAK)) {
++       if (isEvaluateLoop) {
++         consume(SEMICOLON, "Expect ';' after 'break'.");
++         return new Stmt.Break(null);
++       }
++
++       throw error(previous(), "Break statement is not inside loop.");
++    }
++
+     return expressionStatement();
+   }
+ 
+@@ -50,7 +61,10 @@ class Parser {
+     consume(LEFT_PAREN, "Expect '(' after 'while'.");
+     Expr condition = expression();
+     consume(RIGHT_PAREN, "Expect ')' after condition.");
++
++    isEvaluateLoop = true;
+     Stmt body = statement();
++    isEvaluateLoop = false;
+ 
+     return new Stmt.While(condition, body);
+   }
+@@ -93,7 +107,9 @@ class Parser {
+     }
+     consume(RIGHT_PAREN, "Expect ')' after for clauses.");
+ 
++    isEvaluateLoop = true;
+     Stmt body = statement();
++    isEvaluateLoop = false;
+ 
+     if (increment != null) {
+       body = new Stmt.Block(
+@@ -332,6 +348,7 @@ class Parser {
+         case WHILE:
+         case PRINT:
+         case RETURN:
++        case BREAK:
+           return;
+       }
+ 
+diff --git a/lox/Scanner.java b/lox/Scanner.java
+index e197380..969f510 100644
+--- a/lox/Scanner.java
++++ b/lox/Scanner.java
+@@ -31,6 +31,7 @@ class Scanner {
+     keywords.put("true",   TRUE);
+     keywords.put("var",    VAR);
+     keywords.put("while",  WHILE);
++    keywords.put("break",  BREAK);
+   }
+ 
+   private int start = 0;
+diff --git a/lox/Stmt.java b/lox/Stmt.java
+index e6d540d..c65a751 100644
+--- a/lox/Stmt.java
++++ b/lox/Stmt.java
+@@ -10,6 +10,7 @@ abstract class Stmt {
+     R visitPrintStmt(Print stmt);
+     R visitVarStmt(Var stmt);
+     R visitWhileStmt(While stmt);
++    R visitBreakStmt(Break stmt);
+   }
+   static class Block extends Stmt {
+     Block(List<Stmt> statements) {
+@@ -91,6 +92,18 @@ abstract class Stmt {
+     final Expr condition;
+     final Stmt body;
+   }
++  static class Break extends Stmt {
++    Break(Object any) {
++      this.any = any;
++    }
++
++    @Override
++    <R> R accept(Visitor<R> visitor) {
++      return visitor.visitBreakStmt(this);
++    }
++
++    final Object any;
++  }
+ 
+   abstract <R> R accept(Visitor<R> visitor);
+ }
+diff --git a/lox/TokenType.java b/lox/TokenType.java
+index c5967be..1b87c42 100644
+--- a/lox/TokenType.java
++++ b/lox/TokenType.java
+@@ -16,7 +16,7 @@ enum TokenType {
+ 
+   // Keywords.
+   AND, CLASS, ELSE, FALSE, FUN, FOR, IF, NIL, OR,
+-  PRINT, RETURN, SUPER, THIS, TRUE, VAR, WHILE,
++  PRINT, RETURN, SUPER, THIS, TRUE, VAR, WHILE, BREAK,
+ 
+   EOF
+ }
+diff --git a/tool/GenerateAst.java b/tool/GenerateAst.java
+index 67298eb..f72531d 100644
+--- a/tool/GenerateAst.java
++++ b/tool/GenerateAst.java
+@@ -30,7 +30,8 @@ public class GenerateAst {
+                   " Stmt elseBranch",
+       "Print      : Expr expression",
+       "Var        : Token name, Expr initializer",
+-      "While      : Expr condition, Stmt body"
++      "While      : Expr condition, Stmt body",
++      "Break      : Object any"
+     ));
+   }
+ 
