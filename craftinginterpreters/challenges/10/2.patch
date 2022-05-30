@@ -1,0 +1,171 @@
+diff --git a/lox/Expr.java b/lox/Expr.java
+index 3ddde84..6f29e85 100644
+--- a/lox/Expr.java
++++ b/lox/Expr.java
+@@ -12,6 +12,7 @@ abstract class Expr {
+     R visitCallExpr(Call expr);
+     R visitUnaryExpr(Unary expr);
+     R visitVariableExpr(Variable expr);
++    R visitFunctionExpr(Function expr);
+   }
+   static class Assign extends Expr {
+     Assign(Token name, Expr value) {
+@@ -125,6 +126,20 @@ abstract class Expr {
+ 
+     final Token name;
+   }
++  static class Function extends Expr {
++    Function(List<Token> params, List<Stmt> body) {
++      this.params = params;
++      this.body = body;
++    }
++
++    @Override
++    <R> R accept(Visitor<R> visitor) {
++      return visitor.visitFunctionExpr(this);
++    }
++
++    final List<Token> params;
++    final List<Stmt> body;
++  }
+ 
+   abstract <R> R accept(Visitor<R> visitor);
+ }
+diff --git a/lox/Interpreter.java b/lox/Interpreter.java
+index cb729bb..20f724d 100644
+--- a/lox/Interpreter.java
++++ b/lox/Interpreter.java
+@@ -261,13 +261,18 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
+ 
+   @Override
+   public Void visitFunctionStmt(Stmt.Function stmt) {
+-    LoxFunction function = new LoxFunction(stmt, environment);
++    LoxFunction function = new LoxFunction(new Expr.Function(stmt.params, stmt.body), environment);
+     
+     environment.define(stmt.name.lexeme, function);
+ 
+     return null;
+   }
+ 
++  @Override
++  public LoxCallable visitFunctionExpr(Expr.Function expr) {
++    return new LoxFunction(expr, environment);
++  }
++
+   void executeBlock(List<Stmt> statements, Environment environment) {
+     Environment previous = this.environment;
+ 
+diff --git a/lox/LoxFunction.java b/lox/LoxFunction.java
+index bcda1d5..a80d483 100644
+--- a/lox/LoxFunction.java
++++ b/lox/LoxFunction.java
+@@ -3,10 +3,10 @@ package com.craftinginterpreters.lox;
+ import java.util.List;
+ 
+ class LoxFunction implements LoxCallable {
+-  private final Stmt.Function declaration;
++  private final Expr.Function declaration;
+   private final Environment closure;
+ 
+-  LoxFunction(Stmt.Function declaration, Environment closure) {
++  LoxFunction(Expr.Function declaration, Environment closure) {
+     this.closure = closure;
+     this.declaration = declaration;
+   }
+@@ -19,7 +19,6 @@ class LoxFunction implements LoxCallable {
+       environment.define(declaration.params.get(i).lexeme, arguments.get(i));
+     }
+ 
+-
+     try {
+       interpreter.executeBlock(declaration.body, environment);
+     } catch (Return returnValue) {
+@@ -36,6 +35,6 @@ class LoxFunction implements LoxCallable {
+ 
+   @Override
+   public String toString() {
+-    return "<fn " + declaration.name.lexeme + ">";
++    return "<fn anonymous>";
+   }
+ }
+diff --git a/lox/Parser.java b/lox/Parser.java
+index ba2c09f..5d1bc7a 100644
+--- a/lox/Parser.java
++++ b/lox/Parser.java
+@@ -77,11 +77,13 @@ class Parser {
+   private Stmt returnStatement() {
+     Token keyword = previous();
+     Expr value = null;
++
+     if (!check(SEMICOLON)) {
+       value = expression();
+     }
+ 
+     consume(SEMICOLON, "Expect ';' after return value.");
++
+     return new Stmt.Return(keyword, value);
+   }
+ 
+@@ -182,7 +184,9 @@ class Parser {
+ 
+   private Stmt expressionStatement() {
+     Expr expr = expression();
++
+     consume(SEMICOLON, "Expect ';' after expression.");
++
+     return new Stmt.Expression(expr);
+   }
+   
+@@ -326,6 +330,7 @@ class Parser {
+     if (match(FALSE)) return new Expr.Literal(false);
+     if (match(TRUE)) return new Expr.Literal(true);
+     if (match(NIL)) return new Expr.Literal(null);
++    if (match(NIL)) return new Expr.Literal(null);
+ 
+     if (match(NUMBER, STRING)) {
+       return new Expr.Literal(previous().literal);
+@@ -335,6 +340,30 @@ class Parser {
+       return new Expr.Variable(previous());
+     }
+ 
++    if (match(FUN)) {
++      consume(LEFT_PAREN, "Expect '(' after function expression.");
++
++      List<Token> parameters = new ArrayList<>();
++
++      if (!check(RIGHT_PAREN)) {
++        do {
++          if (parameters.size() >= 255) {
++            error(peek(), "Can't have more than 255 parameters.");
++          }
++
++          parameters.add(consume(IDENTIFIER, "Expect parameter name."));
++        } while (match(COMMA));
++      }
++
++      consume(RIGHT_PAREN, "Expect ')' after parameters.");
++
++      consume(LEFT_BRACE, "Expect '{' before function body.");
++
++      List<Stmt> body = block();
++
++      return new Expr.Function(parameters, body);
++    }
++
+     if (match(LEFT_PAREN)) {
+       Expr expr = expression();
+       consume(RIGHT_PAREN, "Expect ')' after expression.");
+diff --git a/tool/GenerateAst.java b/tool/GenerateAst.java
+index 02b5152..61e83b9 100644
+--- a/tool/GenerateAst.java
++++ b/tool/GenerateAst.java
+@@ -21,7 +21,8 @@ public class GenerateAst {
+       "Logical  : Expr left, Token operator, Expr right",
+       "Call     : Expr callee, Token paren, List<Expr> arguments",
+       "Unary    : Token operator, Expr right",
+-      "Variable : Token name"
++      "Variable : Token name",
++      "Function : List<Token> params, List<Stmt> body"
+     ));
+ 
+     defineAst(outputDir, "Stmt", Arrays.asList(
