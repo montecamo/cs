@@ -1,0 +1,135 @@
+diff --git a/lox/Environment.java b/lox/Environment.java
+index c52fb8d..7995800 100644
+--- a/lox/Environment.java
++++ b/lox/Environment.java
+@@ -4,7 +4,8 @@ import java.util.HashMap;
+ import java.util.Map;
+ 
+ class Environment {
+-  private final Map<String, Object> values = new HashMap<>();
++  private final Map<String, Object> values = new ArrayList<>();
++  private final Map<String, Object> globals = new HashMap<>();
+   final Environment enclosing;
+ 
+   Environment() {
+@@ -16,11 +17,13 @@ class Environment {
+   }
+ 
+   void define(String name, Object value) {
+-    values.put(name, value);
++    globals.put(name, value);
++
++    values.add(value);
+   }
+ 
+   Object get(Token name) {
+-    if (values.containsKey(name.lexeme)) {
++    if (globals.containsKey(name.lexeme)) {
+       return values.get(name.lexeme);
+     }
+ 
+@@ -32,7 +35,7 @@ class Environment {
+ 
+   void assign(Token name, Object value) {
+     if (values.containsKey(name.lexeme)) {
+-      values.put(name.lexeme, value);
++      globals.put(name.lexeme, value);
+       return;
+     }
+ 
+@@ -45,7 +48,7 @@ class Environment {
+         "Undefined variable '" + name.lexeme + "'.");
+   }
+ 
+-  Object getAt(int distance, String name) {
++  Object getAt(int distance, int index) {
+     return ancestor(distance).values.get(name);
+   }
+ 
+diff --git a/lox/Interpreter.java b/lox/Interpreter.java
+index 3c71417..cd985ac 100644
+--- a/lox/Interpreter.java
++++ b/lox/Interpreter.java
+@@ -9,6 +9,7 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
+   final Environment globals = new Environment();
+   private Environment environment = globals;
+   private final Map<Expr, Integer> locals = new HashMap<>();
++  private final Map<Expr, Integer> localsIndexes = new HashMap<>();
+ 
+   Interpreter() {
+     globals.define("clock", new LoxCallable() {
+@@ -162,8 +163,10 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
+     Object value = evaluate(expr.value);
+ 
+     Integer distance = locals.get(expr);
++    Integer index = localsIndexes.get(expr);
++
+     if (distance != null) {
+-      environment.assignAt(distance, expr.name, value);
++      environment.assignAt(distance, index, value);
+     } else {
+       globals.assign(expr.name, value);
+     }
+@@ -178,9 +181,10 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
+ 
+   private Object lookUpVariable(Token name, Expr expr) {
+     Integer distance = locals.get(expr);
++    Integer index = localsIndexes.get(expr);
+ 
+     if (distance != null) {
+-      return environment.getAt(distance, name.lexeme);
++      return environment.getAt(distance, index);
+     } else {
+       return globals.get(name);
+     }
+diff --git a/lox/Resolver.java b/lox/Resolver.java
+index abdf839..7a45783 100644
+--- a/lox/Resolver.java
++++ b/lox/Resolver.java
+@@ -8,6 +8,7 @@ import java.util.Stack;
+ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
+   private final Interpreter interpreter;
+   private final Stack<Map<String, Boolean>> scopes = new Stack<>();
++  private final Stack<Map<String, Integer>> indexScopes = new Stack<>();
+   private FunctionType currentFunction = FunctionType.NONE;
+ 
+   Resolver(Interpreter interpreter) {
+@@ -58,19 +59,20 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
+     if (scopes.isEmpty()) return;
+ 
+     Map<String, Boolean> scope = scopes.peek();
++    Map<String, Integer> indexScope = indexScopes.peek();
+ 
+     if (scope.containsKey(name.lexeme)) {
+       Lox.error(name, "Already a variable with this name in this scope.");
+     }
+ 
+-
+     scope.put(name.lexeme, false);
++    indexScope.put(name.lexeme, indexScopes.size())
+   }
+ 
+   private void resolveLocal(Expr expr, Token name) {
+     for (int i = scopes.size() - 1; i >= 0; i--) {
+       if (scopes.get(i).containsKey(name.lexeme)) {
+-        interpreter.resolve(expr, scopes.size() - 1 - i);
++        interpreter.resolve(expr, scopes.size() - 1 - i, indexScopes.get(i).get(name.lexeme));
+         return;
+       }
+     }
+@@ -188,6 +190,7 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
+ 
+   private void endScope() {
+     scopes.pop();
++    indexScopes.pop();
+   }
+ 
+   private void resolve(Stmt stmt) {
+@@ -200,6 +203,7 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
+ 
+   private void beginScope() {
+     scopes.push(new HashMap<String, Boolean>());
++    indexScopes.push(new HashMap<String, Integer>());
+   }
+ 
+   @Override
