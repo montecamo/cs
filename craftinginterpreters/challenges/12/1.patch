@@ -1,0 +1,135 @@
+diff --git a/lox/Interpreter.java b/lox/Interpreter.java
+index 896303a..69632bf 100644
+--- a/lox/Interpreter.java
++++ b/lox/Interpreter.java
+@@ -222,7 +222,15 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
+       methods.put(method.name.lexeme, function);
+     }
+ 
+-    LoxClass klass = new LoxClass(stmt.name.lexeme, methods);
++    Map<String, LoxFunction> staticMethods = new HashMap<>();
++
++    for (Stmt.Function method : stmt.staticMethods) {
++      LoxFunction function = new LoxFunction(method, environment, false);
++
++      staticMethods.put(method.name.lexeme, function);
++    }
++
++    LoxClass klass = new LoxClass(stmt.name.lexeme, methods, staticMethods);
+ 
+     environment.assign(stmt.name, klass);
+ 
+diff --git a/lox/LoxClass.java b/lox/LoxClass.java
+index 582bf47..1ad9531 100644
+--- a/lox/LoxClass.java
++++ b/lox/LoxClass.java
+@@ -3,13 +3,15 @@ package com.craftinginterpreters.lox;
+ import java.util.List;
+ import java.util.Map;
+ 
+-class LoxClass implements LoxCallable {
++class LoxClass extends LoxInstance implements LoxCallable {
+   final String name;
+   private final Map<String, LoxFunction> methods;
++  private final Map<String, LoxFunction> staticMethods;
+ 
+-  LoxClass(String name, Map<String, LoxFunction> methods) {
++  LoxClass(String name, Map<String, LoxFunction> methods, Map<String, LoxFunction> staticMethods) {
+     this.name = name;
+     this.methods = methods;
++    this.staticMethods = staticMethods;
+   }
+ 
+   @Override
+@@ -30,6 +32,15 @@ class LoxClass implements LoxCallable {
+     return instance;
+   }
+ 
++  @Override
++  Object get(Token name) {
++    if (staticMethods.containsKey(name.lexeme)) {
++      return staticMethods.get(name.lexeme);
++    }
++
++    throw new RuntimeError(name, "Undefined static method '" + name.lexeme + "'.");
++  }
++
+   LoxFunction findMethod(String name) {
+     if (methods.containsKey(name)) {
+       return methods.get(name);
+diff --git a/lox/LoxInstance.java b/lox/LoxInstance.java
+index 361ea15..9220693 100644
+--- a/lox/LoxInstance.java
++++ b/lox/LoxInstance.java
+@@ -10,6 +10,8 @@ class LoxInstance {
+   LoxInstance(LoxClass klass) {
+     this.klass = klass;
+   }
++  LoxInstance() {
++  }
+ 
+   @Override
+   public String toString() {
+diff --git a/lox/Parser.java b/lox/Parser.java
+index 3b8acf1..e80b1ba 100644
+--- a/lox/Parser.java
++++ b/lox/Parser.java
+@@ -43,13 +43,19 @@ class Parser {
+     consume(LEFT_BRACE, "Expect '{' before class body.");
+ 
+     List<Stmt.Function> methods = new ArrayList<>();
++    List<Stmt.Function> staticMethods = new ArrayList<>();
++
+     while (!check(RIGHT_BRACE) && !isAtEnd()) {
+-      methods.add(function("method"));
++      if (match(CLASS)) {
++        staticMethods.add(function("method"));
++      } else {
++        methods.add(function("method"));
++      }
+     }
+ 
+     consume(RIGHT_BRACE, "Expect '}' after class body.");
+ 
+-    return new Stmt.Class(name, methods);
++    return new Stmt.Class(name, methods, staticMethods);
+   }
+ 
+   private Stmt statement() {
+diff --git a/lox/Stmt.java b/lox/Stmt.java
+index 00c2db5..789f365 100644
+--- a/lox/Stmt.java
++++ b/lox/Stmt.java
+@@ -27,9 +27,10 @@ abstract class Stmt {
+     final List<Stmt> statements;
+   }
+   static class Class extends Stmt {
+-    Class(Token name, List<Stmt.Function> methods) {
++    Class(Token name, List<Stmt.Function> methods, List<Stmt.Function> staticMethods) {
+       this.name = name;
+       this.methods = methods;
++      this.staticMethods = staticMethods;
+     }
+ 
+     @Override
+@@ -39,6 +40,7 @@ abstract class Stmt {
+ 
+     final Token name;
+     final List<Stmt.Function> methods;
++    final List<Stmt.Function> staticMethods;
+   }
+   static class Expression extends Stmt {
+     Expression(Expr expression) {
+diff --git a/tool/GenerateAst.java b/tool/GenerateAst.java
+index 9f79489..657f0fc 100644
+--- a/tool/GenerateAst.java
++++ b/tool/GenerateAst.java
+@@ -29,7 +29,7 @@ public class GenerateAst {
+ 
+     defineAst(outputDir, "Stmt", Arrays.asList(
+       "Block      : List<Stmt> statements",
+-      "Class      : Token name, List<Stmt.Function> methods",
++      "Class      : Token name, List<Stmt.Function> methods, List<Stmt.Function> staticMethods",
+       "Expression : Expr expression",
+       "Function   : Token name, List<Token> params," +
+                   " List<Stmt> body",
