@@ -1,0 +1,298 @@
+diff --git a/lox/Interpreter.java b/lox/Interpreter.java
+index 896303a..289f8a5 100644
+--- a/lox/Interpreter.java
++++ b/lox/Interpreter.java
+@@ -215,14 +215,24 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
+     environment.define(stmt.name.lexeme, null);
+ 
+     Map<String, LoxFunction> methods = new HashMap<>();
++    Map<String, LoxFunction> getters = new HashMap<>();
+ 
+     for (Stmt.Function method : stmt.methods) {
+-      LoxFunction function = new LoxFunction(method, environment, method.name.lexeme.equals("init"));
++      LoxFunction.FunctionType type = method.name.lexeme.equals("init") ?
++          LoxFunction.FunctionType.INITIALIZER : LoxFunction.FunctionType.FUNCTION;
++
++      LoxFunction function = new LoxFunction(method, environment, type);
+ 
+       methods.put(method.name.lexeme, function);
+     }
+ 
+-    LoxClass klass = new LoxClass(stmt.name.lexeme, methods);
++    for (Stmt.Function getter : stmt.getters) {
++      LoxFunction function = new LoxFunction(getter, environment, LoxFunction.FunctionType.GETTER);
++
++      getters.put(getter.name.lexeme, function);
++    }
++
++    LoxClass klass = new LoxClass(stmt.name.lexeme, methods, getters);
+ 
+     environment.assign(stmt.name, klass);
+ 
+@@ -319,7 +329,7 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
+ 
+   @Override
+   public Void visitFunctionStmt(Stmt.Function stmt) {
+-    LoxFunction function = new LoxFunction(stmt, environment, false);
++    LoxFunction function = new LoxFunction(stmt, environment, LoxFunction.FunctionType.FUNCTION);
+     
+     environment.define(stmt.name.lexeme, function);
+ 
+@@ -330,7 +340,13 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
+   public Object visitGetExpr(Expr.Get expr) {
+     Object object = evaluate(expr.object);
+     if (object instanceof LoxInstance) {
+-      return ((LoxInstance) object).get(expr.name);
++      Object property = ((LoxInstance) object).get(expr.name);
++
++      if (property instanceof LoxFunction && ((LoxFunction)property).getType() == LoxFunction.FunctionType.GETTER) {
++        return ((LoxFunction)property).call(this, new ArrayList());
++      } 
++
++      return property;
+     }
+ 
+     throw new RuntimeError(expr.name, "Only instances have properties.");
+diff --git a/lox/LoxClass.java b/lox/LoxClass.java
+index 582bf47..30c1df1 100644
+--- a/lox/LoxClass.java
++++ b/lox/LoxClass.java
+@@ -6,10 +6,12 @@ import java.util.Map;
+ class LoxClass implements LoxCallable {
+   final String name;
+   private final Map<String, LoxFunction> methods;
++  private final Map<String, LoxFunction> getters;
+ 
+-  LoxClass(String name, Map<String, LoxFunction> methods) {
++  LoxClass(String name, Map<String, LoxFunction> methods, Map<String, LoxFunction> getters) {
+     this.name = name;
+     this.methods = methods;
++    this.getters = getters;
+   }
+ 
+   @Override
+@@ -38,6 +40,14 @@ class LoxClass implements LoxCallable {
+     return null;
+   }
+ 
++  LoxFunction findGetter(String name) {
++    if (getters.containsKey(name)) {
++      return getters.get(name);
++    }
++
++    return null;
++  }
++
+   @Override
+   public int arity() {
+     LoxFunction initializer = findMethod("init");
+diff --git a/lox/LoxFunction.java b/lox/LoxFunction.java
+index 8442af2..c25025c 100644
+--- a/lox/LoxFunction.java
++++ b/lox/LoxFunction.java
+@@ -5,13 +5,18 @@ import java.util.List;
+ class LoxFunction implements LoxCallable {
+   private final Stmt.Function declaration;
+   private final Environment closure;
++  private final FunctionType type;
+ 
+-  private final boolean isInitializer;
++  public enum FunctionType {
++    FUNCTION,
++    INITIALIZER,
++    GETTER,
++  }
+ 
+-  LoxFunction(Stmt.Function declaration, Environment closure, boolean isInitializer) {
+-    this.isInitializer = isInitializer;;
++  LoxFunction(Stmt.Function declaration, Environment closure, FunctionType type) {
+     this.declaration = declaration;
+     this.closure = closure;
++    this.type = type;
+   }
+ 
+   @Override
+@@ -22,16 +27,15 @@ class LoxFunction implements LoxCallable {
+       environment.define(declaration.params.get(i).lexeme, arguments.get(i));
+     }
+ 
+-
+     try {
+       interpreter.executeBlock(declaration.body, environment);
+     } catch (Return returnValue) {
+-      if (isInitializer) return closure.getAt(0, "this");
++      if (type == FunctionType.INITIALIZER) return closure.getAt(0, "this");
+ 
+       return returnValue.value;
+     }
+ 
+-    if (isInitializer) return closure.getAt(0, "this");
++    if (type == FunctionType.INITIALIZER) return closure.getAt(0, "this");
+ 
+     return null;
+   }
+@@ -46,11 +50,15 @@ class LoxFunction implements LoxCallable {
+     return "<fn " + declaration.name.lexeme + ">";
+   }
+ 
++  public FunctionType getType() {
++    return type; 
++  }
++
+   LoxFunction bind(LoxInstance instance) {
+     Environment environment = new Environment(closure);
+ 
+     environment.define("this", instance);
+ 
+-    return new LoxFunction(declaration, environment, isInitializer);
++    return new LoxFunction(declaration, environment, type);
+   }
+ }
+diff --git a/lox/LoxInstance.java b/lox/LoxInstance.java
+index 361ea15..fac3aec 100644
+--- a/lox/LoxInstance.java
++++ b/lox/LoxInstance.java
+@@ -25,6 +25,10 @@ class LoxInstance {
+ 
+     if (method != null) return method.bind(this);
+ 
++    LoxFunction getter = klass.findGetter(name.lexeme);
++
++    if (getter != null) return getter.bind(this);
++
+     throw new RuntimeError(name, "Undefined property '" + name.lexeme + "'.");
+   }
+ 
+diff --git a/lox/Parser.java b/lox/Parser.java
+index 3b8acf1..7ddce06 100644
+--- a/lox/Parser.java
++++ b/lox/Parser.java
+@@ -43,13 +43,19 @@ class Parser {
+     consume(LEFT_BRACE, "Expect '{' before class body.");
+ 
+     List<Stmt.Function> methods = new ArrayList<>();
++    List<Stmt.Function> getters = new ArrayList<>();
++
+     while (!check(RIGHT_BRACE) && !isAtEnd()) {
+-      methods.add(function("method"));
++      if (next().type == LEFT_BRACE) {
++        getters.add(function("getter"));
++      } else {
++        methods.add(function("method"));
++      }
+     }
+ 
+     consume(RIGHT_BRACE, "Expect '}' after class body.");
+ 
+-    return new Stmt.Class(name, methods);
++    return new Stmt.Class(name, methods, getters);
+   }
+ 
+   private Stmt statement() {
+@@ -66,21 +72,23 @@ class Parser {
+   private Stmt.Function function(String kind) {
+     Token name = consume(IDENTIFIER, "Expect " + kind + " name.");
+ 
+-    consume(LEFT_PAREN, "Expect '(' after " + kind + " name.");
+-
+     List<Token> parameters = new ArrayList<>();
+ 
+-    if (!check(RIGHT_PAREN)) {
+-      do {
+-        if (parameters.size() >= 255) {
+-          error(peek(), "Can't have more than 255 parameters.");
+-        }
++    if (!kind.equals("getter")) {
++      consume(LEFT_PAREN, "Expect '(' after " + kind + " name.");
+ 
+-        parameters.add(consume(IDENTIFIER, "Expect parameter name."));
+-      } while (match(COMMA));
+-    }
++      if (!check(RIGHT_PAREN)) {
++        do {
++          if (parameters.size() >= 255) {
++            error(peek(), "Can't have more than 255 parameters.");
++          }
+ 
+-    consume(RIGHT_PAREN, "Expect ')' after parameters.");
++          parameters.add(consume(IDENTIFIER, "Expect parameter name."));
++        } while (match(COMMA));
++      }
++
++      consume(RIGHT_PAREN, "Expect ')' after parameters.");
++    }
+ 
+     consume(LEFT_BRACE, "Expect '{' before " + kind + " body.");
+ 
+@@ -409,6 +417,10 @@ class Parser {
+     return tokens.get(current - 1);
+   }
+ 
++  private Token next() {
++    return tokens.get(current + 1);
++  }
++
+   private ParseError error(Token token, String message) {
+     Lox.error(token, message);
+     return new ParseError();
+diff --git a/lox/Resolver.java b/lox/Resolver.java
+index c6da73d..64ff8d7 100644
+--- a/lox/Resolver.java
++++ b/lox/Resolver.java
+@@ -18,7 +18,7 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
+     NONE,
+     FUNCTION,
+     METHOD,
+-    INITIALIZER
++    INITIALIZER,
+   }
+ 
+   private enum ClassType {
+@@ -118,6 +118,10 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
+       resolveFunction(method, declaration); 
+     }
+ 
++    for (Stmt.Function getter : stmt.getters) {
++      resolveFunction(getter, FunctionType.METHOD); 
++    }
++
+     endScope();
+ 
+     currentClass = enclosingClass;
+diff --git a/lox/Stmt.java b/lox/Stmt.java
+index 00c2db5..066a84a 100644
+--- a/lox/Stmt.java
++++ b/lox/Stmt.java
+@@ -27,9 +27,10 @@ abstract class Stmt {
+     final List<Stmt> statements;
+   }
+   static class Class extends Stmt {
+-    Class(Token name, List<Stmt.Function> methods) {
++    Class(Token name, List<Stmt.Function> methods, List<Stmt.Function> getters) {
+       this.name = name;
+       this.methods = methods;
++      this.getters = getters;
+     }
+ 
+     @Override
+@@ -39,6 +40,7 @@ abstract class Stmt {
+ 
+     final Token name;
+     final List<Stmt.Function> methods;
++    final List<Stmt.Function> getters;
+   }
+   static class Expression extends Stmt {
+     Expression(Expr expression) {
+diff --git a/tool/GenerateAst.java b/tool/GenerateAst.java
+index 9f79489..bab4a9b 100644
+--- a/tool/GenerateAst.java
++++ b/tool/GenerateAst.java
+@@ -29,7 +29,7 @@ public class GenerateAst {
+ 
+     defineAst(outputDir, "Stmt", Arrays.asList(
+       "Block      : List<Stmt> statements",
+-      "Class      : Token name, List<Stmt.Function> methods",
++      "Class      : Token name, List<Stmt.Function> methods, List<Stmt.Function> getters",
+       "Expression : Expr expression",
+       "Function   : Token name, List<Token> params," +
+                   " List<Stmt> body",
