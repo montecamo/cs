@@ -1,0 +1,32 @@
+const groups = (depths) => {
+  const sums = [];
+
+  let a = depths[0];
+  let b = depths[1];
+  let c = depths[2];
+
+  for (let i = 3; i < depths.length; i++) {
+    sums.push(a + b + c);
+
+    a = depths[i - 2];
+    b = depths[i - 1];
+    c = depths[i];
+  }
+
+  return sums;
+};
+
+const find = (depths) => {
+  let count = 0;
+  let prev = depths[0];
+
+  for (let i = 1; i < depths.length; i++) {
+    if (depths[i] > prev) {
+      count++;
+    }
+
+    prev = depths[i];
+  }
+
+  return count;
+};
