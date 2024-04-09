@@ -14,5 +14,16 @@ CHIP Mux4Way16 {
     OUT out[16];
     
     PARTS:
-    //// Replace this comment with your code.
+    Not(in=sel[0], out=nsel0);
+    Not(in=sel[1], out=nsel1);
+
+    And(a=nsel1, b=nsel0, out=aa);
+    And(a=nsel1, b=sel[0], out=bb);
+    And(a=sel[1], b=nsel0, out=cc);
+    And(a=sel[1], b=sel[0], out=dd);
+
+    Mux16(a=b, b=a, sel=aa, out=out1);
+    Mux16(a=out1, b=b, sel=bb, out=out2);
+    Mux16(a=out2, b=c, sel=cc, out=out3);
+    Mux16(a=out3, b=d, sel=dd, out=out);
 }
