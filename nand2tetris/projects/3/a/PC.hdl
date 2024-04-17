@@ -14,5 +14,12 @@ CHIP PC {
     OUT out[16];
     
     PARTS:
-    //// Replace this comment with your code.
+    Or8Way(in[0]=load, in[1]=inc, in[2]=reset, out=write);
+    Register(in=feedback, load=write, out=outprev, out=out);
+
+    Inc16(in=outprev, out=incremented);
+    Mux16(a=incremented, b=in, sel=load, out=selected);
+
+    Add16(a[0..15]=true, b[0]=reset, out=nreset);
+    And16(a=selected, b=nreset, out=feedback);
 }
