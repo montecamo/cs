@@ -14,9 +14,25 @@
  * some input using the keyboard, or the program may do some procerssing. 
  */
 CHIP Computer {
-
     IN reset;
 
     PARTS:
-    //// Replace this comment with your code.
+    ROM32K(address=address, out=instruction);
+
+    CPU(
+      instruction=instruction,
+      reset=reset,
+      pc=address,
+      addressM=addressM,
+      outM=outM,
+      writeM=writeM,
+      inM=inM
+    );
+
+    Memory(
+      load=writeM,
+      address=addressM,
+      in=outM,
+      out=inM
+    );
 }
