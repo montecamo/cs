@@ -31,7 +31,7 @@ while True:
     for event in kqueue.control(events, len(events)):
         if event.ident == s.fileno():
             client_sock, client_addr = s.accept()
-            log(f"New connection from {client_addr}")
+            # log(f"New connection from {client_addr}")
 
             proxies[client_sock.fileno()] = Proxy(client_sock)
 

@@ -1,9 +1,14 @@
+import re
+
+
 class Parser:
     def __init__(self, type):
         self.type = type
+        self.bytes = b""
 
         self.state = "PARSE_METHOD" if type == "REQ" else "PARSE_HTTP_VERSION"
         self.headers = {}
+        self.url = ""
         self.data = {"headers": {}, "content": b"", "method": b"", "version": b""}
 
         self.body_separator_length = 0
@@ -14,6 +19,8 @@ class Parser:
         self.value = b""
 
     def parse(self, byte):
+        self.bytes += byte
+
         match self.state:
             case "PARSE_METHOD":
                 if byte == b" ":
@@ -37,6 +44,7 @@ class Parser:
             case "PARSE_URL":
                 if byte == b" ":
                     self.data["url"] = self.value
+                    self.url = self.value.decode("utf-8")
                     self.state = (
                         "PARSE_HTTP_VERSION"
                         if self.type == "REQ"
@@ -48,7 +56,7 @@ class Parser:
                 self.value += byte
 
             case "PARSE_HTTP_VERSION":
-                if byte == b"\r":
+                if byte == b"\r" or (byte == b" " and self.type == "RES"):
                     self.state = "PARSE_NEWLINE" if self.type == "REQ" else "PARSE_URL"
                     self.data["version"] = self.value
 
@@ -113,3 +121,16 @@ class Parser:
                     return
 
                 self.value += byte
+
+
+def parse_cache_control(value):
+    data = {}
+
+    for key in re.split(r",\s*", value):
+        if "=" in key:
+            key, value = re.split(r"=", key)
+            data[key] = value
+        else:
+            data[key] = True
+
+    return data
